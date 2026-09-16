@@ -1,0 +1,148 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL + TimescaleDB ────────────────────────────────────
+  db:
+    image: timescale/timescaledb:latest-pg16
+    container_name: airfare_db
+    environment:
+      POSTGRES_USER: airfare
+      POSTGRES_PASSWORD: airfare
+      POSTGRES_DB: airfare_index
+    ports:
+      - "5432:5432"
+    volumes:
+      - airfare_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airfare -d airfare_index"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ───────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: airfare_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - airfare_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Kafka (KRaft mode, no Zookeeper) ───────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: airfare_kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qg"
+    ports:
+      - "9092:9092"
+    volumes:
+      - airfare_kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ── MinIO (S3-compatible) ───────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: airfare_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - airfare_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI (API service) ───────────────────────────────────────
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: airfare_api
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://airfare:airfare@db:5432/airfare_index
+      DATABASE_URL_SYNC: postgresql+psycopg2://airfare:airfare@db:5432/airfare_index
+      REDIS_URL: redis://redis:6379/0
+      KAFKA_BROKERS: kafka:9092
+      S3_ENDPOINT: http://minio:9000
+      API_ENV: development
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./apps/api:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── Processor worker ───────────────────────────────────────────
+  processor:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: airfare_processor
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://airfare:airfare@db:5432/airfare_index
+      DATABASE_URL_SYNC: postgresql+psycopg2://airfare:airfare@db:5432/airfare_index
+      REDIS_URL: redis://redis:6379/0
+      KAFKA_BROKERS: kafka:9092
+      S3_ENDPOINT: http://minio:9000
+    depends_on:
+      db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    command: python -m workers.processor_worker
+
+  # ── Next.js frontend ───────────────────────────────────────────
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: airfare_web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  airfare_pgdata:
+  airfare_redis_data:
+  airfare_kafka_data:
+  airfare_minio_data:
