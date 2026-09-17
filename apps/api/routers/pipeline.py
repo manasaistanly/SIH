@@ -35,16 +35,40 @@ class RunTelemetryResponse(BaseModel):
     created_at: datetime
 
 
+from config import get_settings
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from auth import get_current_user
+
+settings = get_settings()
+optional_security = HTTPBearer(auto_error=False)
+
+
 @router.post("/trigger", response_model=Dict[str, Any])
 async def trigger_pipeline_run(
     payload: Optional[PipelineTriggerRequest] = None,
-    current_user: models.User = Depends(require_role(["ADMIN"]))
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Trigger end-to-end collection, 12-gate quality verification,
     anomaly detection, and daily Laspeyres index computation.
-    Requires ADMIN role.
+    Requires ADMIN role (or development mode).
     """
+    user_email = "admin@rtapip.gov.in"
+    if credentials:
+        user = await get_current_user(credentials, db)
+        if user.role != "ADMIN":
+            raise HTTPException(
+                status_code=403,
+                detail="Operation not permitted. Required role: ADMIN"
+            )
+        user_email = user.email
+    elif settings.api_env != "development":
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required for production pipeline execution."
+        )
+
     target_date = payload.collection_date if payload and payload.collection_date else date.today()
     seed_val = payload.seed if payload and payload.seed is not None else 42
 
@@ -52,7 +76,7 @@ async def trigger_pipeline_run(
         summary = execute_full_pipeline(collection_date=target_date, seed=seed_val)
         return {
             "status": "COMPLETED",
-            "executed_by": current_user.email,
+            "executed_by": user_email,
             "pipeline_summary": summary
         }
     except Exception as e:

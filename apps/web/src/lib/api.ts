@@ -171,6 +171,144 @@ async function fetchJSON<T>(endpoint: string, options?: RequestInit): Promise<T 
   }
 }
 
+export interface MapRouteItem {
+  route_id: string;
+  route_code: string;
+  origin: {
+    iata: string;
+    name: string;
+    city: string;
+    lat: number;
+    lng: number;
+  };
+  destination: {
+    iata: string;
+    name: string;
+    city: string;
+    lat: number;
+    lng: number;
+  };
+  distance_km: number;
+  mode_metrics: {
+    current_fare: number;
+    change_7d_pct: number;
+    change_30d_pct: number;
+    historical_deviation_pct: number;
+    anomaly_flag: boolean;
+    anomaly_severity: string;
+    passenger_volume_weight: number;
+    national_index_contribution: number;
+    booking_pressure_spread_pct: number;
+  };
+}
+
+export interface RouteIntelligence {
+  route_id: string;
+  route_code: string;
+  origin: { iata: string; city: string; name: string; lat: number; lng: number };
+  destination: { iata: string; city: string; name: string; lat: number; lng: number };
+  distance_km: number;
+  category: string;
+  weight: number;
+  national_index_contribution: number;
+  observed_fares: {
+    current_median: number;
+    base_median: number;
+    current_index: number;
+    change_7d_pct: number;
+    change_30d_pct: number;
+    change_90d_pct: number;
+    observation_count: number;
+    timestamp: string;
+  };
+  historical_distribution: {
+    min: number;
+    max: number;
+    avg: number;
+    percentile: number;
+    deviation_from_base_pct: number;
+  };
+  booking_window_curve: Array<{
+    code: string;
+    name: string;
+    median: number;
+    availability_pct: number;
+    obs_count: number;
+  }>;
+  airlines: Array<{
+    name: string;
+    code: string;
+    fare: number;
+    change_pct: number;
+    market_share_pct: number;
+    reliability_pct: number;
+  }>;
+  anomaly_analysis: {
+    status: string;
+    is_anomaly: boolean;
+    expected_lower: number;
+    expected_upper: number;
+    method: string;
+    z_score: number;
+  };
+  prediction: {
+    expected_fare: number;
+    prediction_range: { lower: number; upper: number };
+    direction: string;
+    confidence_score: number;
+    horizon_days: number;
+    model_metadata: {
+      model_name: string;
+      validation_mae: number;
+      validation_rmse: number;
+      training_sample: string;
+      status: string;
+    };
+    classification: string;
+  };
+  decision_support: {
+    recommendation: string;
+    urgency: string;
+    rationale: string;
+    disclaimer: string;
+  };
+}
+
+export interface ObservedFlight {
+  airline: string;
+  airline_code: string;
+  flight_number: string;
+  departure_time: string;
+  arrival_time: string;
+  duration: string;
+  stops: string;
+  observed_fare: number;
+  cabin: string;
+  fare_timestamp: string;
+  source: string;
+}
+
+export interface IndexAttribution {
+  index_date: string;
+  national_index: number;
+  total_movement_pct: number;
+  summary_explanation: string;
+  route_breakdown: Array<{
+    route_code: string;
+    weight_pct: number;
+    route_delta_pct: number;
+    contribution_points: number;
+  }>;
+  factor_drivers: Array<{
+    category: string;
+    name: string;
+    impact_pct: number;
+    description: string;
+    type: string;
+  }>;
+  methodology: string;
+}
+
 export const api = {
   getHealth: () => fetchJSON<{ status: string; database: string }>("/health"),
   getLatestIndex: () => fetchJSON<LatestIndex>("/index/latest"),
@@ -184,6 +322,11 @@ export const api = {
   getMethodology: () => fetchJSON<any>("/metadata/methodology"),
   getAirports: () => fetchJSON<any[]>("/metadata/airports"),
   getRoutes: () => fetchJSON<any[]>("/metadata/routes"),
+  getMapRoutes: () => fetchJSON<MapRouteItem[]>("/map/routes"),
+  getRouteIntelligence: (routeCode: string) => fetchJSON<RouteIntelligence>(`/routes/${routeCode}/intelligence`),
+  getRoutePrediction: (routeCode: string, horizon: number = 14) => fetchJSON<any>(`/routes/${routeCode}/prediction?horizon_days=${horizon}`),
+  getObservedFlights: (routeCode: string) => fetchJSON<ObservedFlight[]>(`/routes/${routeCode}/observed-flights`),
+  getIndexAttribution: () => fetchJSON<IndexAttribution>("/index/attribution"),
   triggerPipeline: async (collectionDate?: string) => {
     try {
       const res = await fetch(`${API_BASE_URL}/pipeline/trigger`, {
@@ -220,4 +363,5 @@ export const api = {
     }
   },
 };
+
 

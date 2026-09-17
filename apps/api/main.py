@@ -69,13 +69,25 @@ app = FastAPI(
 )
 
 # ── CORS Middleware ───────────────────────────────────────────────────────────
-origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+configured_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+dev_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000"
+]
+all_origins = list(set(configured_origins + dev_origins))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins if origins else ["*"],
+    allow_origins=all_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # ── Include Routers ───────────────────────────────────────────────────────────

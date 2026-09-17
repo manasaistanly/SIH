@@ -44,6 +44,8 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
       const data = await res.json();
       localStorage.setItem("rtapip_token", data.access_token);
       localStorage.setItem("rtapip_user", JSON.stringify(data.user));
+      document.cookie = `rtapip_token=${data.access_token}; path=/; max-age=86400; SameSite=Lax`;
+      document.cookie = `rtapip_role=${data.user.role}; path=/; max-age=86400; SameSite=Lax`;
       onLoginSuccess(data.user, data.access_token);
       onClose();
     } catch (err: any) {
@@ -71,6 +73,8 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
       .then((data) => {
         localStorage.setItem("rtapip_token", data.access_token);
         localStorage.setItem("rtapip_user", JSON.stringify(data.user));
+        document.cookie = `rtapip_token=${data.access_token}; path=/; max-age=86400; SameSite=Lax`;
+        document.cookie = `rtapip_role=${data.user.role}; path=/; max-age=86400; SameSite=Lax`;
         onLoginSuccess(data.user, data.access_token);
         onClose();
       })
@@ -81,6 +85,8 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
           full_name: demoEmail.includes("admin") ? "System Administrator" : demoEmail.includes("analyst") ? "Data Analyst" : "Public Viewer",
           role: demoEmail.includes("admin") ? "ADMIN" : demoEmail.includes("analyst") ? "DATA_ANALYST" : "VIEWER"
         };
+        document.cookie = `rtapip_token=demo-token; path=/; max-age=86400; SameSite=Lax`;
+        document.cookie = `rtapip_role=${fallbackUser.role}; path=/; max-age=86400; SameSite=Lax`;
         onLoginSuccess(fallbackUser, "demo-token");
         onClose();
       })

@@ -134,12 +134,23 @@ class IntelligenceEngine:
     def get_route_intelligence(session: Session, route_code: str) -> Optional[Dict[str, Any]]:
         """
         Produce deep, multi-dimensional intelligence on a specific corridor.
+        Supports bidirectional lookup (e.g. BOM-DEL or DEL-BOM).
         """
+        clean_code = route_code.strip().upper().replace(" ", "").replace("_", "-")
         route = (
             session.query(models.Route)
-            .filter(models.Route.route_code == route_code)
+            .filter(models.Route.route_code == clean_code)
             .first()
         )
+        is_reversed = False
+        if not route and "-" in clean_code:
+            parts = clean_code.split("-")
+            if len(parts) == 2:
+                rev_code = f"{parts[1]}-{parts[0]}"
+                route = session.query(models.Route).filter(models.Route.route_code == rev_code).first()
+                if route:
+                    is_reversed = True
+
         if not route:
             return None
 
@@ -228,23 +239,28 @@ class IntelligenceEngine:
         )
         weight = float(basket_route.weight) if basket_route else 0.15
 
+        orig_dict = {
+            "iata": route.origin.iata_code,
+            "city": route.origin.city,
+            "name": route.origin.name,
+            "lat": float(route.origin.latitude),
+            "lng": float(route.origin.longitude)
+        }
+        dest_dict = {
+            "iata": route.destination.iata_code,
+            "city": route.destination.city,
+            "name": route.destination.name,
+            "lat": float(route.destination.latitude),
+            "lng": float(route.destination.longitude)
+        }
+        if is_reversed:
+            orig_dict, dest_dict = dest_dict, orig_dict
+
         return {
             "route_id": route.id,
-            "route_code": route.route_code,
-            "origin": {
-                "iata": route.origin.iata_code,
-                "city": route.origin.city,
-                "name": route.origin.name,
-                "lat": float(route.origin.latitude),
-                "lng": float(route.origin.longitude)
-            },
-            "destination": {
-                "iata": route.destination.iata_code,
-                "city": route.destination.city,
-                "name": route.destination.name,
-                "lat": float(route.destination.latitude),
-                "lng": float(route.destination.longitude)
-            },
+            "route_code": clean_code if is_reversed else route.route_code,
+            "origin": orig_dict,
+            "destination": dest_dict,
             "distance_km": float(route.distance_km),
             "category": route.dgca_category,
             "weight": weight,
@@ -344,7 +360,14 @@ class IntelligenceEngine:
         """
         Retrieve observed flight quotes on this route for ticket comparison.
         """
-        route = session.query(models.Route).filter(models.Route.route_code == route_code).first()
+        clean_code = route_code.strip().upper().replace(" ", "").replace("_", "-")
+        route = session.query(models.Route).filter(models.Route.route_code == clean_code).first()
+        if not route and "-" in clean_code:
+            parts = clean_code.split("-")
+            if len(parts) == 2:
+                rev_code = f"{parts[1]}-{parts[0]}"
+                route = session.query(models.Route).filter(models.Route.route_code == rev_code).first()
+
         if not route:
             return []
 

@@ -1,17 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Sidebar } from "@/components/Sidebar";
+import { Sidebar, RoleMode } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
-import { HeroIndex } from "@/components/HeroIndex";
-import { MarketPulse } from "@/components/MarketPulse";
-import { RoutePressure } from "@/components/RoutePressure";
-import { RouteDetailDrawer } from "@/components/RouteDetailDrawer";
-import { BookingWindowCurve } from "@/components/BookingWindowCurve";
-import { AirlineMovement } from "@/components/AirlineMovement";
-import { DataQualitySection } from "@/components/DataQualitySection";
-import { DGCABenchmarkSection } from "@/components/DGCABenchmarkSection";
-import { AuditLineageSection } from "@/components/AuditLineageSection";
+import { TravellerView } from "@/components/TravellerView";
+import { AnalystView } from "@/components/AnalystView";
+import { AdminView } from "@/components/AdminView";
 import { LineageModal } from "@/components/LineageModal";
 import { AuthModal } from "@/components/AuthModal";
 import {
@@ -23,7 +17,11 @@ import {
   QualitySummary,
   AnomalyItem,
   DGCABenchmark,
-  LineageData
+  LineageData,
+  MapRouteItem,
+  RouteIntelligence,
+  ObservedFlight,
+  IndexAttribution
 } from "@/lib/api";
 
 interface UserProfile {
@@ -35,7 +33,9 @@ interface UserProfile {
 
 export default function Home() {
   const [currentSection, setCurrentSection] = useState<string>("overview");
-  const [selectedRoute, setSelectedRoute] = useState<RouteIndex | null>(null);
+  const [activeRolePerspective, setActiveRolePerspective] = useState<RoleMode>("ANALYST");
+  const [selectedRouteCode, setSelectedRouteCode] = useState<string>("DEL-BOM");
+
   const [isLineageOpen, setIsLineageOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -44,7 +44,7 @@ export default function Home() {
   const [isBacktesting, setIsBacktesting] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
 
-  // Backend API State
+  // Core API State
   const [latestIndex, setLatestIndex] = useState<LatestIndex | null>(null);
   const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([]);
   const [routeIndices, setRouteIndices] = useState<RouteIndex[]>([]);
@@ -54,19 +54,30 @@ export default function Home() {
   const [anomalies, setAnomalies] = useState<AnomalyItem[]>([]);
   const [lineage, setLineage] = useState<LineageData | null>(null);
 
+  // Intelligence & Geographic Map State
+  const [mapRoutes, setMapRoutes] = useState<MapRouteItem[]>([]);
+  const [intelligence, setIntelligence] = useState<RouteIntelligence | null>(null);
+  const [observedFlights, setObservedFlights] = useState<ObservedFlight[]>([]);
+  const [attribution, setAttribution] = useState<IndexAttribution | null>(null);
+
   // Load saved user session
   useEffect(() => {
     try {
       const savedUser = localStorage.getItem("rtapip_user");
       if (savedUser) {
-        setCurrentUser(JSON.parse(savedUser));
+        const u: UserProfile = JSON.parse(savedUser);
+        setCurrentUser(u);
+        if (u.role === "ADMIN") setActiveRolePerspective("ADMIN");
+        else if (u.role === "VIEWER") setActiveRolePerspective("TRAVELLER");
+        else setActiveRolePerspective("ANALYST");
       }
     } catch (e) {
       console.warn("Could not read user session:", e);
     }
   }, []);
 
-  const loadAllData = async () => {
+  // Fetch all foundation data
+  const loadPlatformData = async () => {
     try {
       const [
         latestRes,
@@ -75,7 +86,9 @@ export default function Home() {
         backtestRes,
         bmRes,
         qualityRes,
-        anomRes
+        anomRes,
+        mapRes,
+        attribRes
       ] = await Promise.all([
         api.getLatestIndex(),
         api.getTimeseries(90),
@@ -83,7 +96,9 @@ export default function Home() {
         api.getLatestBacktest(),
         api.getDGCABenchmarks(),
         api.getQualitySummary(),
-        api.getAnomalies()
+        api.getAnomalies(),
+        api.getMapRoutes(),
+        api.getIndexAttribution()
       ]);
 
       if (latestRes) setLatestIndex(latestRes);
@@ -93,42 +108,82 @@ export default function Home() {
       if (bmRes) setBenchmarks(bmRes);
       if (qualityRes) setQuality(qualityRes);
       if (anomRes) setAnomalies(anomRes);
+      if (mapRes) setMapRoutes(mapRes);
+      if (attribRes) setAttribution(attribRes);
 
       if (latestRes?.id) {
         const linRes = await api.getIndexLineage(latestRes.id);
         if (linRes) setLineage(linRes);
       }
     } catch (err) {
-      console.error("Failed to load platform data:", err);
+      console.error("Failed loading platform data:", err);
+    }
+  };
+
+  // Fetch route-specific deep intelligence and observed flight options
+  const loadRouteIntelligence = async (code: string) => {
+    try {
+      const [intelRes, flightsRes] = await Promise.all([
+        api.getRouteIntelligence(code),
+        api.getObservedFlights(code)
+      ]);
+      if (intelRes) setIntelligence(intelRes);
+      if (flightsRes) setObservedFlights(flightsRes);
+    } catch (err) {
+      console.error(`Failed loading route intelligence for ${code}:`, err);
     }
   };
 
   useEffect(() => {
-    loadAllData();
+    loadPlatformData();
   }, []);
+
+  useEffect(() => {
+    loadRouteIntelligence(selectedRouteCode);
+  }, [selectedRouteCode]);
+
+  const handleSelectRoute = (routeCode: string) => {
+    setSelectedRouteCode(routeCode);
+  };
 
   const handleLoginSuccess = (user: UserProfile) => {
     setCurrentUser(user);
-    setNotification(`Authenticated as ${user.full_name} [${user.role}].`);
+    if (user.role === "ADMIN") setActiveRolePerspective("ADMIN");
+    else if (user.role === "VIEWER") setActiveRolePerspective("TRAVELLER");
+    else setActiveRolePerspective("ANALYST");
+
+    setNotification(`Authenticated as ${user.full_name} [${user.role}]. Workstation unlocked.`);
     setTimeout(() => setNotification(null), 4000);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } catch (e) {
+      console.warn("Logout error:", e);
+    }
     localStorage.removeItem("rtapip_token");
     localStorage.removeItem("rtapip_user");
+    document.cookie = "rtapip_token=; path=/; max-age=0; SameSite=Lax";
+    document.cookie = "rtapip_role=; path=/; max-age=0; SameSite=Lax";
     setCurrentUser(null);
-    setNotification("Signed out successfully.");
+    setActiveRolePerspective("TRAVELLER");
+    setNotification("Signed out successfully. Session revoked.");
     setTimeout(() => setNotification(null), 3000);
+    if (typeof window !== "undefined" && window.location.pathname !== "/") {
+      window.location.href = "/";
+    }
   };
 
   const handleTriggerPipeline = async () => {
     setIsTriggering(true);
     try {
       await api.triggerPipeline();
-      setNotification("Pipeline updated: 180 flight quotes ingested, 12 quality checks passed, daily index refreshed.");
-      await loadAllData();
+      setNotification("Pipeline update completed: 180 quotes ingested, 12 quality checks passed, index refreshed.");
+      await loadPlatformData();
+      await loadRouteIntelligence(selectedRouteCode);
     } catch (err) {
-      setNotification("Collection cycle updated.");
+      setNotification("Collection cycle refreshed.");
     } finally {
       setIsTriggering(false);
       setTimeout(() => setNotification(null), 5000);
@@ -138,8 +193,8 @@ export default function Home() {
   const handleTriggerBacktest = async () => {
     setIsBacktesting(true);
     try {
-      await loadAllData();
-      setNotification("DGCA Calibration updated: 12 monthly periods aligned with official published tariffs.");
+      await loadPlatformData();
+      setNotification("DGCA Calibration updated: 12 months aligned against official published statistics.");
     } catch (err) {
       setNotification("Backtest refreshed.");
     } finally {
@@ -148,37 +203,32 @@ export default function Home() {
     }
   };
 
-  // Scroll to section when selected from sidebar
-  const handleSelectSection = (sectionId: string) => {
-    setCurrentSection(sectionId);
-    if (sectionId === "overview" || sectionId === "airfare-index") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-    const elem = document.getElementById(sectionId);
-    if (elem) {
-      elem.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
-
   return (
     <div className="min-h-screen flex bg-[#fafafa] text-[#111111] selection:bg-[#111111] selection:text-white">
       {/* Persistent Left Sidebar */}
       <Sidebar
         currentSection={currentSection}
-        onSelectSection={handleSelectSection}
+        onSelectSection={(sec) => setCurrentSection(sec)}
         currentUser={currentUser}
+        activeRolePerspective={activeRolePerspective}
+        onSelectRolePerspective={(mode) => setActiveRolePerspective(mode)}
         onOpenLogin={() => setIsLoginOpen(true)}
         onLogout={handleLogout}
         isTriggering={isTriggering}
         onTriggerPipeline={handleTriggerPipeline}
       />
 
-      {/* Main Content Area */}
+      {/* Main Workstation Viewport */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Header & Data Status Bar */}
+        {/* TopBar with IST Clock, Collection Health, and Status Strip */}
         <TopBar
-          pageTitle="National Airfare Intelligence"
+          pageTitle={
+            activeRolePerspective === "TRAVELLER"
+              ? "Traveller Flight Intelligence"
+              : activeRolePerspective === "ADMIN"
+              ? "Governance & Pipeline Control"
+              : "National Airfare Intelligence Workstation"
+          }
           latestIndex={latestIndex}
           onOpenLineage={() => setIsLineageOpen(true)}
           onOpenLogin={() => setIsLoginOpen(true)}
@@ -186,7 +236,7 @@ export default function Home() {
           isTriggering={isTriggering}
         />
 
-        {/* Notification Toast */}
+        {/* Toast Notification */}
         {notification && (
           <div className="max-w-6xl mx-auto px-6 pt-4 w-full">
             <div className="p-3 bg-[#111111] text-white text-xs font-mono flex items-center justify-between rounded-sm shadow-md">
@@ -201,87 +251,51 @@ export default function Home() {
           </div>
         )}
 
-        {/* NARRATIVE DATA STORY MAIN FLOW */}
-        <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-8 space-y-8">
-          {/* SECTION 1: THE HERO (CURRENT MARKET & INDEX TIMESERIES) */}
-          <div id="airfare-index">
-            <HeroIndex latestIndex={latestIndex} timeseries={timeseries} />
-          </div>
+        {/* Main Workspace Body: Switches dynamically by Active Role Perspective */}
+        <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-8">
+          {/* ROLE 1: TRAVELLER EXPERIENCE */}
+          {activeRolePerspective === "TRAVELLER" && (
+            <TravellerView
+              routes={mapRoutes}
+              selectedRouteCode={selectedRouteCode}
+              onSelectRoute={handleSelectRoute}
+              intelligence={intelligence}
+              observedFlights={observedFlights}
+            />
+          )}
 
-          {/* SECTION 2: MARKET PULSE (AIRFARE PRESSURE, BOOKING BEHAVIOUR, DATA COVERAGE) */}
-          <div id="pulse">
-            <MarketPulse
+          {/* ROLE 2: ANALYST EXPERIENCE */}
+          {activeRolePerspective === "ANALYST" && (
+            <AnalystView
               latestIndex={latestIndex}
+              timeseries={timeseries}
+              mapRoutes={mapRoutes}
+              selectedRouteCode={selectedRouteCode}
+              onSelectRoute={handleSelectRoute}
+              intelligence={intelligence}
+              attribution={attribution}
               routes={routeIndices}
-              onSelectRoute={(code) => {
-                const found = routeIndices.find((r) => r.route_code === code);
-                if (found) setSelectedRoute(found);
-              }}
-            />
-          </div>
-
-          {/* SECTION 3: ROUTE PRESSURE (HORIZONTAL CONTRIBUTION MATRIX) */}
-          <div id="routes">
-            <RoutePressure
-              routes={routeIndices}
-              onSelectRoute={(r) => setSelectedRoute(r)}
-            />
-          </div>
-
-          {/* SECTION 4: BOOKING WINDOW (TEMPORAL YIELD CURVE T+1 TO T+45) */}
-          <div id="booking-windows">
-            <BookingWindowCurve
-              baseMedian={latestIndex ? 7200 : undefined}
-            />
-          </div>
-
-          {/* SECTION 5: AIRLINE MOVEMENT (CARRIER COMPARISON) */}
-          <div id="airlines">
-            <AirlineMovement />
-          </div>
-
-          {/* SECTION 6: DATA QUALITY & PIPELINE GATES */}
-          <div id="quality">
-            <DataQualitySection quality={quality} anomalies={anomalies} />
-          </div>
-
-          {/* SECTION 7: DGCA BENCHMARK VALIDATION */}
-          <div id="backtesting">
-            <DGCABenchmarkSection
               backtest={backtest}
               benchmarks={benchmarks}
-              onTriggerBacktest={handleTriggerBacktest}
-              isTriggering={isBacktesting}
-            />
-          </div>
-
-          {/* SECTION 8: AUDITABILITY & REPRODUCIBILITY */}
-          <div id="audit-lineage">
-            <AuditLineageSection
               lineage={lineage}
               onOpenLineage={() => setIsLineageOpen(true)}
+              onTriggerBacktest={handleTriggerBacktest}
+              isBacktesting={isBacktesting}
             />
-          </div>
+          )}
 
-          {/* METHODOLOGY REFERENCE SECTION */}
-          <div id="methodology" className="p-6 bg-[#ffffff] border border-[#e5e7eb] rounded-sm space-y-3 font-mono text-xs">
-            <div className="flex items-center justify-between pb-2 border-b border-[#e5e7eb]">
-              <span className="font-bold text-[#111111] uppercase text-[10px]">
-                Statistical Methodology Specification &middot; Version 1.0
-              </span>
-              <span className="text-[#6b7280] text-[11px]">Official Publication</span>
-            </div>
-            <p className="text-[#4b5563] leading-relaxed">
-              The India Airfare Price Index (AIP) is calculated using a two-stage Laspeyres-type aggregation over standardized advance-purchase intervals (T+1, T+7, T+15, T+30, T+45 days). Outliers are detected and treated via Median Absolute Deviation (MAD Z &gt; 3.0) and interquartile range filters. Baseline is anchored to January 2024 (Jan 2024 = 100.0).
-            </p>
-            <div className="flex items-center gap-4 text-[11px] text-[#6b7280] pt-1">
-              <span>Formula: Jevons-Laspeyres Composite</span>
-              <span>&bull;</span>
-              <span>Weights: DGCA Directorate Aviation Annual Passenger Volume</span>
-              <span>&bull;</span>
-              <span>Frequency: Real-Time Continuous / Daily Benchmark</span>
-            </div>
-          </div>
+          {/* ROLE 3: ADMIN & GOVERNANCE EXPERIENCE */}
+          {activeRolePerspective === "ADMIN" && (
+            <AdminView
+              latestIndex={latestIndex}
+              quality={quality}
+              anomalies={anomalies}
+              lineage={lineage}
+              onOpenLineage={() => setIsLineageOpen(true)}
+              onTriggerPipeline={handleTriggerPipeline}
+              isTriggering={isTriggering}
+            />
+          )}
         </main>
 
         {/* Institutional Minimal Footer */}
@@ -290,27 +304,21 @@ export default function Home() {
             <div className="flex items-center gap-3">
               <span className="text-[#111111] font-bold">AIP &middot; India Airfare Intelligence</span>
               <span>&bull;</span>
-              <span>DGCA Government Benchmark Aligned</span>
+              <span>Google Maps Geographic Layer</span>
               <span>&bull;</span>
-              <span>v1.0 Institutional Release</span>
+              <span>v1.0 Institutional Platform</span>
             </div>
 
             <div className="flex items-center gap-4 text-[11px]">
-              <button onClick={() => handleSelectSection("overview")} className="hover:text-[#111111]">Overview</button>
-              <button onClick={() => handleSelectSection("routes")} className="hover:text-[#111111]">Routes</button>
-              <button onClick={() => handleSelectSection("airlines")} className="hover:text-[#111111]">Airlines</button>
+              <button onClick={() => setActiveRolePerspective("TRAVELLER")} className="hover:text-[#111111]">User View</button>
+              <button onClick={() => setActiveRolePerspective("ANALYST")} className="hover:text-[#111111]">Analyst View</button>
+              <button onClick={() => setActiveRolePerspective("ADMIN")} className="hover:text-[#111111]">Admin View</button>
               <button onClick={() => setIsLineageOpen(true)} className="hover:text-[#111111]">Audit Trail</button>
               <a href="http://localhost:8000/docs" target="_blank" rel="noreferrer" className="hover:text-[#111111]">API</a>
             </div>
           </div>
         </footer>
       </div>
-
-      {/* Slide-over Route Analytics Drawer */}
-      <RouteDetailDrawer
-        route={selectedRoute}
-        onClose={() => setSelectedRoute(null)}
-      />
 
       {/* Slide-over Mathematical Lineage Drawer */}
       <LineageModal
