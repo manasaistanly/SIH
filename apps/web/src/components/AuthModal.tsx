@@ -14,9 +14,9 @@ import {
   Building2,
   AlertTriangle,
   User,
-  Key,
   ShieldAlert
 } from "lucide-react";
+import { getApiBaseUrl } from "@/lib/api";
 
 interface UserProfile {
   id: string;
@@ -102,7 +102,7 @@ export function AuthModal({
     setLoading(true);
 
     try {
-      const res = await fetch("http://localhost:8000/api/v1/auth/login", {
+      const res = await fetch(`${getApiBaseUrl()}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), password })

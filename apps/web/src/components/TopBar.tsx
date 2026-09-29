@@ -130,7 +130,7 @@ export function TopBar({
           </button>
 
           <a
-            href="http://localhost:8000/docs"
+            href="/docs"
             target="_blank"
             rel="noreferrer"
             className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono text-[#374151] hover:text-[#111111] hover:bg-[#f3f4f6] rounded-sm border border-[#e5e7eb] transition-colors"

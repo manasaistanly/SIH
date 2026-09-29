@@ -385,7 +385,7 @@ export default function Home() {
                 {currentUser ? `Signed in as ${currentUser.full_name} (${currentUser.role})` : "Sign In / RBAC Clearance"}
               </button>
               <button onClick={() => setIsLineageOpen(true)} className="hover:text-[#111111]">Audit Trail</button>
-              <a href="http://localhost:8000/docs" target="_blank" rel="noreferrer" className="hover:text-[#111111]">API Docs</a>
+              <a href="/docs" target="_blank" rel="noreferrer" className="hover:text-[#111111]">API Docs</a>
             </div>
           </div>
         </footer>

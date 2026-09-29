@@ -3,7 +3,40 @@
  * Connects frontend dashboard to FastAPI backend with graceful fallback defaults.
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+/**
+ * Resolves the base URL for API requests.
+ * - Runtime server functions: Reads the bound Vercel service URL from `process.env.API_URL`
+ * - Explicit override: Reads `process.env.NEXT_PUBLIC_API_URL`
+ * - In-browser on Vercel: Uses relative `/api/v1` via Vercel's public rewrite
+ * - Local development: Falls back to `http://localhost:8000/api/v1`
+ */
+export function getApiBaseUrl(): string {
+  // 1. In serverless runtime/SSR with Vercel service binding
+  if (typeof window === "undefined" && process.env.API_URL) {
+    return `${process.env.API_URL.replace(/\/$/, "")}/api/v1`;
+  }
+
+  // 2. Explicit environment variable override
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "");
+  }
+
+  // 3. In the browser when deployed or on vercel dev with top-level rewrites
+  if (typeof window !== "undefined") {
+    // If not running standalone on port 3000, use same-origin relative rewrite
+    const isStandalonePort3000 =
+      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") &&
+      window.location.port === "3000";
+    if (!isStandalonePort3000) {
+      return "/api/v1";
+    }
+  }
+
+  // 4. Default standalone local dev URL
+  return "http://localhost:8000/api/v1";
+}
+
+export const API_BASE_URL = getApiBaseUrl();
 
 export interface LatestIndex {
   id: string;
@@ -151,7 +184,13 @@ function getAuthHeader(): Record<string, string> {
 
 async function fetchJSON<T>(endpoint: string, options?: RequestInit): Promise<T | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const baseUrl = getApiBaseUrl();
+    const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+    const url = baseUrl.startsWith("http")
+      ? `${baseUrl}${cleanEndpoint}`
+      : `${baseUrl}${cleanEndpoint}`;
+
+    const res = await fetch(url, {
       ...options,
       headers: {
         "Content-Type": "application/json",
