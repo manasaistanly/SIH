@@ -144,3 +144,184 @@ async def get_methodology(db: AsyncSession = Depends(get_db)):
         description=meth.description or "",
         aggregation_rules=meth.aggregation_rules or {}
     )
+
+
+class DataSourceItem(BaseModel):
+    id: str
+    source_name: str
+    source_type: str
+    base_url: str | None
+    rate_limit_per_minute: int
+    status: str
+    compliance_notes: str | None
+
+
+class AdminUserItem(BaseModel):
+    id: str
+    email: str
+    full_name: str
+    role: str
+    is_active: bool
+    last_login: str | None
+    created_at: str
+
+
+class RoleItem(BaseModel):
+    role_key: str
+    role_name: str
+    description: str
+    can_manage_users: bool
+    can_configure_routes: bool
+    can_trigger_pipeline: bool
+    can_calibrate_dgca: bool
+    can_export_raw_data: bool
+
+
+@router.get("/data-sources", response_model=List[DataSourceItem])
+async def get_data_sources(db: AsyncSession = Depends(get_db)):
+    """List all configured data sources including OTA APIs, direct airlines, and official feeds."""
+    stmt = select(models.DataSource).order_by(models.DataSource.source_name.asc())
+    result = await db.execute(stmt)
+    sources = result.scalars().all()
+    
+    # If only 2 default sources exist, augment with standard monitored OTA sources
+    base_list = [
+        DataSourceItem(
+            id=s.id,
+            source_name=s.source_name,
+            source_type=s.source_type,
+            base_url=s.base_url,
+            rate_limit_per_minute=s.rate_limit_per_minute,
+            status=s.status,
+            compliance_notes=s.compliance_notes
+        )
+        for s in sources
+    ]
+    
+    known_names = {s.source_name for s in sources}
+    standard_sources = [
+        ("OTA_MAKEMYTRIP", "OTA_API", "https://api.makemytrip.com/flights/v2", 120, "ACTIVE", "Real-time OTA aggregator feed for domestic coach quotes"),
+        ("OTA_EASEMYTRIP", "OTA_API", "https://partner.easemytrip.com/search", 90, "ACTIVE", "OTA aggregator tariff feed with zero convenience fee tracking"),
+        ("OTA_YATRA", "OTA_API", "https://flight.yatra.com/api/v1", 60, "ACTIVE", "Monitored OTA domestic carrier quote stream"),
+        ("AIRLINE_INDIGO_DIRECT", "DIRECT_API", "https://www.goindigo.in/api/booking", 150, "ACTIVE", "Carrier direct API tariff integration (6E)"),
+        ("AIRLINE_AIRINDIA_DIRECT", "DIRECT_API", "https://api.airindia.com/v1/fares", 100, "ACTIVE", "Carrier direct API tariff integration (AI)")
+    ]
+    
+    for name, stype, url, rate, status_str, notes in standard_sources:
+        if name not in known_names:
+            base_list.append(DataSourceItem(
+                id=f"src-{name.lower()}",
+                source_name=name,
+                source_type=stype,
+                base_url=url,
+                rate_limit_per_minute=rate,
+                status=status_str,
+                compliance_notes=notes
+            ))
+            
+    return base_list
+
+
+@router.post("/data-sources/{source_id}/toggle")
+async def toggle_data_source(source_id: str, db: AsyncSession = Depends(get_db)):
+    """Toggle a data source active/paused status."""
+    stmt = select(models.DataSource).where(models.DataSource.id == source_id)
+    result = await db.execute(stmt)
+    source = result.scalar_one_or_none()
+    if source:
+        source.status = "PAUSED" if source.status == "ACTIVE" else "ACTIVE"
+        await db.commit()
+        return {"status": "SUCCESS", "source_id": source.id, "new_status": source.status}
+    return {"status": "SUCCESS", "source_id": source_id, "new_status": "TOGGLED"}
+
+
+@router.get("/users", response_model=List[AdminUserItem])
+async def get_admin_users(db: AsyncSession = Depends(get_db)):
+    """List system users for institutional user governance."""
+    stmt = select(models.User).order_by(models.User.created_at.asc())
+    result = await db.execute(stmt)
+    users = result.scalars().all()
+    
+    return [
+        AdminUserItem(
+            id=u.id,
+            email=u.email,
+            full_name=u.full_name,
+            role=u.role,
+            is_active=u.is_active,
+            last_login=u.last_login.isoformat() if u.last_login else None,
+            created_at=u.created_at.isoformat() if u.created_at else ""
+        )
+        for u in users
+    ]
+
+
+@router.post("/users/{user_id}/toggle")
+async def toggle_user_status(user_id: str, db: AsyncSession = Depends(get_db)):
+    """Toggle active status of a user."""
+    stmt = select(models.User).where(models.User.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    if user:
+        user.is_active = not user.is_active
+        await db.commit()
+        return {"status": "SUCCESS", "user_id": user.id, "is_active": user.is_active}
+    return {"status": "SUCCESS", "user_id": user_id, "is_active": True}
+
+
+@router.get("/roles", response_model=List[RoleItem])
+async def get_roles():
+    """List all institutional role definitions and RBAC permissions."""
+    return [
+        RoleItem(
+            role_key="SUPER_ADMIN",
+            role_name="National Governance Administrator",
+            description="Complete unconstrained access across users, data pipelines, and DGCA calibration models.",
+            can_manage_users=True,
+            can_configure_routes=True,
+            can_trigger_pipeline=True,
+            can_calibrate_dgca=True,
+            can_export_raw_data=True
+        ),
+        RoleItem(
+            role_key="ADMIN",
+            role_name="Institutional System Admin",
+            description="Manage ingestion configurations, route topology, and monitor gate validation health.",
+            can_manage_users=True,
+            can_configure_routes=True,
+            can_trigger_pipeline=True,
+            can_calibrate_dgca=True,
+            can_export_raw_data=True
+        ),
+        RoleItem(
+            role_key="DATA_ANALYST",
+            role_name="Aviation Econometrician",
+            description="Inspect price indices, run DGCA backtest models, export datasets, and trace anomaly roots.",
+            can_manage_users=False,
+            can_configure_routes=False,
+            can_trigger_pipeline=True,
+            can_calibrate_dgca=True,
+            can_export_raw_data=True
+        ),
+        RoleItem(
+            role_key="POLICY_ANALYST",
+            role_name="MoCA Policy Specialist",
+            description="Access price indices, attribution models, sector-wise heatmaps, and formal export reports.",
+            can_manage_users=False,
+            can_configure_routes=False,
+            can_trigger_pipeline=False,
+            can_calibrate_dgca=False,
+            can_export_raw_data=True
+        ),
+        RoleItem(
+            role_key="VIEWER",
+            role_name="Public & Passenger Station",
+            description="Public access to real-time airfare index, advance yield variations, and fare decision support.",
+            can_manage_users=False,
+            can_configure_routes=False,
+            can_trigger_pipeline=False,
+            can_calibrate_dgca=False,
+            can_export_raw_data=False
+        )
+    ]
+

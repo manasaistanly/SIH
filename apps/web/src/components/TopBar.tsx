@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Search, ShieldAlert, GitBranch, RefreshCw, Key, HelpCircle } from "lucide-react";
+import { Search, ShieldAlert, GitBranch, RefreshCw, Key, HelpCircle, User, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { LatestIndex } from "@/lib/api";
 
 interface TopBarProps {
@@ -9,9 +9,14 @@ interface TopBarProps {
   latestIndex: LatestIndex | null;
   onOpenLineage: () => void;
   onOpenLogin: () => void;
+  onOpenUserLogin?: () => void;
+  onOpenAdminLogin?: () => void;
   onOpenAbout?: () => void;
   onTriggerPipeline: () => void;
   isTriggering: boolean;
+  currentUser?: { id: string; email: string; full_name: string; role: string } | null;
+  isSidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 export function TopBar({
@@ -19,9 +24,14 @@ export function TopBar({
   latestIndex,
   onOpenLineage,
   onOpenLogin,
+  onOpenUserLogin,
+  onOpenAdminLogin,
   onOpenAbout,
   onTriggerPipeline,
-  isTriggering
+  isTriggering,
+  currentUser,
+  isSidebarCollapsed,
+  onToggleSidebar
 }: TopBarProps) {
   const [currentTime, setCurrentTime] = useState<string>("15 SEP 2026 &middot; 18:42 IST");
 
@@ -64,7 +74,20 @@ export function TopBar({
       {/* Top Header Row */}
       <header className="h-14 px-6 flex items-center justify-between gap-4">
         {/* Left: Page Title & Context */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {onToggleSidebar && (
+            <button
+              onClick={onToggleSidebar}
+              title={isSidebarCollapsed ? "Expand sidebar (Ctrl+B)" : "Minimize sidebar (Ctrl+B)"}
+              className="p-1.5 -ml-1 text-[#6b7280] hover:text-[#111111] hover:bg-[#f3f4f6] rounded-sm transition-colors flex items-center justify-center"
+            >
+              {isSidebarCollapsed ? (
+                <PanelLeftOpen className="w-4 h-4" />
+              ) : (
+                <PanelLeftClose className="w-4 h-4" />
+              )}
+            </button>
+          )}
           <h1 className="text-sm font-semibold tracking-tight text-[#111111] uppercase">
             {pageTitle}
           </h1>
@@ -115,14 +138,42 @@ export function TopBar({
             <span>API</span>
           </a>
 
-          <button
-            onClick={onOpenLogin}
-            title="User Credentials"
-            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-[#111111] hover:bg-[#f3f4f6] rounded-sm border border-[#e5e7eb] transition-colors"
-          >
-            <Key className="w-3 h-3 text-[#6b7280]" />
-            <span className="hidden sm:inline">Access</span>
-          </button>
+          {currentUser ? (
+            <button
+              onClick={onOpenLogin}
+              title="User Credentials & RBAC Clearance"
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono rounded-sm border transition-colors ${
+                currentUser.role === "ADMIN"
+                  ? "bg-[#fef2f2] border-[#fecaca] text-[#991b1b] font-bold"
+                  : currentUser.role === "DATA_ANALYST"
+                  ? "bg-[#f0f9ff] border-[#bae6fd] text-[#0369a1] font-bold"
+                  : "bg-[#f0fdf4] border-[#bbf7d0] text-[#15803d] font-bold"
+              }`}
+            >
+              <Key className="w-3 h-3 text-[#6b7280]" />
+              <span>RBAC: {currentUser.role}</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onOpenUserLogin || onOpenLogin}
+                title="Passenger & Analyst Sign In"
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono bg-white border border-[#e5e7eb] text-[#111111] hover:bg-[#f3f4f6] rounded-sm transition-colors"
+              >
+                <User className="w-3 h-3 text-[#6b7280]" />
+                <span className="hidden sm:inline">User Login</span>
+              </button>
+
+              <button
+                onClick={onOpenAdminLogin || onOpenLogin}
+                title="Official Admin & Governance Portal"
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono bg-[#fef2f2] border border-[#fecaca] text-[#991b1b] font-bold hover:bg-[#fee2e2] rounded-sm transition-colors"
+              >
+                <ShieldAlert className="w-3 h-3 text-[#b91c1c]" />
+                <span>Admin Portal</span>
+              </button>
+            </div>
+          )}
         </div>
       </header>
 

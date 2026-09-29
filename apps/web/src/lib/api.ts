@@ -344,6 +344,31 @@ export const api = {
       return null;
     }
   },
+  getDataSources: () => fetchJSON<DataSourceItem[]>("/metadata/data-sources"),
+  toggleDataSource: async (id: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/metadata/data-sources/${id}/toggle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() }
+      });
+      return res.ok ? await res.json() : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  getAdminUsers: () => fetchJSON<AdminUserItem[]>("/metadata/users"),
+  toggleUserStatus: async (id: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/metadata/users/${id}/toggle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeader() }
+      });
+      return res.ok ? await res.json() : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  getRoles: () => fetchJSON<RoleItem[]>("/metadata/roles"),
   logout: async (token?: string) => {
     try {
       const authToken = token || (typeof window !== "undefined" ? localStorage.getItem("rtapip_token") : null);
@@ -363,5 +388,37 @@ export const api = {
     }
   },
 };
+
+export interface DataSourceItem {
+  id: string;
+  source_name: string;
+  source_type: string;
+  base_url: string | null;
+  rate_limit_per_minute: number;
+  status: string;
+  compliance_notes: string | null;
+}
+
+export interface AdminUserItem {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  is_active: boolean;
+  last_login: string | null;
+  created_at: string;
+}
+
+export interface RoleItem {
+  role_key: string;
+  role_name: string;
+  description: string;
+  can_manage_users: boolean;
+  can_configure_routes: boolean;
+  can_trigger_pipeline: boolean;
+  can_calibrate_dgca: boolean;
+  can_export_raw_data: boolean;
+}
+
 
 

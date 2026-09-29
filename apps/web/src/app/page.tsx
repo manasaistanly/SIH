@@ -38,11 +38,42 @@ export default function Home() {
 
   const [isLineageOpen, setIsLineageOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<"USER" | "ADMIN">("USER");
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+
+  const handleOpenUserLogin = () => {
+    setAuthModalMode("USER");
+    setIsLoginOpen(true);
+  };
+
+  const handleOpenAdminLogin = () => {
+    setAuthModalMode("ADMIN");
+    setIsLoginOpen(true);
+  };
 
   const [isTriggering, setIsTriggering] = useState(false);
   const [isBacktesting, setIsBacktesting] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
+
+  // Collapsible sidebar state
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("rtapip_sidebar_collapsed");
+      if (saved === "true") setIsSidebarCollapsed(true);
+    } catch {}
+  }, []);
+
+  const handleToggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("rtapip_sidebar_collapsed", String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Core API State
   const [latestIndex, setLatestIndex] = useState<LatestIndex | null>(null);
@@ -203,6 +234,28 @@ export default function Home() {
     }
   };
 
+  const handleSelectRolePerspective = (mode: RoleMode) => {
+    // RBAC Rule 1: Admin Governance Station requires ADMIN clearance
+    if (mode === "ADMIN") {
+      if (!currentUser || (currentUser.role !== "ADMIN" && currentUser.role !== "SUPER_ADMIN")) {
+        setNotification("RBAC Restriction: Admin Governance Station requires ADMIN clearance (Level 4). Please authenticate.");
+        setIsLoginOpen(true);
+        return;
+      }
+    }
+
+    // RBAC Rule 2: Analyst Station requires at least DATA_ANALYST clearance
+    if (mode === "ANALYST") {
+      if (currentUser && currentUser.role === "VIEWER") {
+        setNotification("RBAC Restriction: Analyst Workstation requires DATA_ANALYST clearance (Level 3).");
+        setIsLoginOpen(true);
+        return;
+      }
+    }
+
+    setActiveRolePerspective(mode);
+  };
+
   return (
     <div className="min-h-screen flex bg-[#fafafa] text-[#111111] selection:bg-[#111111] selection:text-white">
       {/* Persistent Left Sidebar */}
@@ -211,11 +264,15 @@ export default function Home() {
         onSelectSection={(sec) => setCurrentSection(sec)}
         currentUser={currentUser}
         activeRolePerspective={activeRolePerspective}
-        onSelectRolePerspective={(mode) => setActiveRolePerspective(mode)}
-        onOpenLogin={() => setIsLoginOpen(true)}
+        onSelectRolePerspective={handleSelectRolePerspective}
+        onOpenLogin={() => handleOpenUserLogin()}
+        onOpenUserLogin={handleOpenUserLogin}
+        onOpenAdminLogin={handleOpenAdminLogin}
         onLogout={handleLogout}
         isTriggering={isTriggering}
         onTriggerPipeline={handleTriggerPipeline}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={handleToggleSidebar}
       />
 
       {/* Main Workstation Viewport */}
@@ -231,9 +288,14 @@ export default function Home() {
           }
           latestIndex={latestIndex}
           onOpenLineage={() => setIsLineageOpen(true)}
-          onOpenLogin={() => setIsLoginOpen(true)}
+          onOpenLogin={() => handleOpenUserLogin()}
+          onOpenUserLogin={handleOpenUserLogin}
+          onOpenAdminLogin={handleOpenAdminLogin}
           onTriggerPipeline={handleTriggerPipeline}
           isTriggering={isTriggering}
+          currentUser={currentUser}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={handleToggleSidebar}
         />
 
         {/* Toast Notification */}
@@ -257,6 +319,7 @@ export default function Home() {
           {activeRolePerspective === "TRAVELLER" && (
             <TravellerView
               routes={mapRoutes}
+              routeIndices={routeIndices}
               selectedRouteCode={selectedRouteCode}
               onSelectRoute={handleSelectRoute}
               intelligence={intelligence}
@@ -294,6 +357,14 @@ export default function Home() {
               onOpenLineage={() => setIsLineageOpen(true)}
               onTriggerPipeline={handleTriggerPipeline}
               isTriggering={isTriggering}
+              backtest={backtest}
+              benchmarks={benchmarks}
+              onTriggerBacktest={handleTriggerBacktest}
+              isBacktesting={isBacktesting}
+              onNotify={(msg) => {
+                setNotification(msg);
+                setTimeout(() => setNotification(null), 4000);
+              }}
             />
           )}
         </main>
@@ -310,11 +381,11 @@ export default function Home() {
             </div>
 
             <div className="flex items-center gap-4 text-[11px]">
-              <button onClick={() => setActiveRolePerspective("TRAVELLER")} className="hover:text-[#111111]">User View</button>
-              <button onClick={() => setActiveRolePerspective("ANALYST")} className="hover:text-[#111111]">Analyst View</button>
-              <button onClick={() => setActiveRolePerspective("ADMIN")} className="hover:text-[#111111]">Admin View</button>
+              <button onClick={() => setIsLoginOpen(true)} className="hover:text-[#111111] font-semibold text-[#1e40af]">
+                {currentUser ? `Signed in as ${currentUser.full_name} (${currentUser.role})` : "Sign In / RBAC Clearance"}
+              </button>
               <button onClick={() => setIsLineageOpen(true)} className="hover:text-[#111111]">Audit Trail</button>
-              <a href="http://localhost:8000/docs" target="_blank" rel="noreferrer" className="hover:text-[#111111]">API</a>
+              <a href="http://localhost:8000/docs" target="_blank" rel="noreferrer" className="hover:text-[#111111]">API Docs</a>
             </div>
           </div>
         </footer>
@@ -327,11 +398,12 @@ export default function Home() {
         lineage={lineage}
       />
 
-      {/* Authentication Modal */}
+      {/* Authentication Modal with Separate User and Admin Modes */}
       <AuthModal
         isOpen={isLoginOpen}
         onClose={() => setIsLoginOpen(false)}
         onLoginSuccess={handleLoginSuccess}
+        initialMode={authModalMode}
       />
     </div>
   );

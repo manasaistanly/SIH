@@ -5,10 +5,12 @@ import { Clock, Info, ShieldCheck } from "lucide-react";
 
 interface BookingWindowCurveProps {
   baseMedian?: number;
+  highlightWindow?: string;
 }
 
-export function BookingWindowCurve({ baseMedian = 7200 }: BookingWindowCurveProps) {
+export function BookingWindowCurve({ baseMedian = 7200, highlightWindow }: BookingWindowCurveProps) {
   const [hoveredWindow, setHoveredWindow] = useState<string | null>(null);
+  const activeCode = hoveredWindow || highlightWindow;
 
   // Standardized dynamic yield data calibrated against national median
   const windows = [
@@ -191,17 +193,22 @@ export function BookingWindowCurve({ baseMedian = 7200 }: BookingWindowCurveProp
           </thead>
           <tbody className="divide-y divide-[#f3f4f6]">
             {windows.map((w) => {
-              const isSelected = hoveredWindow === w.code;
+              const isSelected = activeCode === w.code;
               return (
                 <tr
                   key={w.code}
                   onMouseEnter={() => setHoveredWindow(w.code)}
                   onMouseLeave={() => setHoveredWindow(null)}
                   className={`transition-colors cursor-default ${
-                    isSelected ? "bg-[#fafafa]" : "hover:bg-[#fafafa]/60"
+                    isSelected ? "bg-[#f0fdf4] font-semibold border-l-2 border-[#15803d]" : "hover:bg-[#fafafa]/60"
                   }`}
                 >
-                  <td className="py-2.5 px-3 font-bold text-[#111111]">{w.code}</td>
+                  <td className="py-2.5 px-3 font-bold text-[#111111]">
+                    <span className="flex items-center gap-1.5">
+                      {w.code}
+                      {isSelected && <span className="text-[9px] px-1 py-0.2 bg-[#15803d] text-white rounded-xs">SELECTED</span>}
+                    </span>
+                  </td>
                   <td className="py-2.5 px-3 text-[#6b7280]">{w.name}</td>
                   <td className="py-2.5 px-3 text-right font-bold text-[#111111] tabular-numbers">
                     ₹{w.medianFare.toLocaleString()}
